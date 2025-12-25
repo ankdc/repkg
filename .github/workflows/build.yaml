@@ -1,13 +1,20 @@
-name: Build Linux x64 on Windows
+name: Build and Release Linux x64
 
 on:
   push:
+    # Thêm trigger tags để khi bạn push tag (vd: v1.0.0) nó sẽ tạo release
+    tags:
+      - "v*" 
     branches: [ "master", "main" ]
   workflow_dispatch:
 
+# CẤP QUYỀN GHI ĐỂ TẠO RELEASE
+permissions:
+  contents: write
+
 jobs:
   build-linux:
-    runs-on: windows-latest # Vẫn chạy trên Windows như bạn yêu cầu
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
@@ -17,26 +24,25 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x 
-        # LƯU Ý QUAN TRỌNG: Để tính năng "SingleFile" (thay thế ILRepack) hoạt động tốt trên Linux,
-        # bạn hãy chắc chắn file .csproj đã được sửa thành <TargetFramework>net8.0</TargetFramework>
 
     - name: Restore dependencies
       run: dotnet restore
 
     - name: Publish Linux x64 (Single File)
-      # Lệnh này thay thế cho cả msbuild và ILRepack
-      # -p:DebugType=None: Không tạo file .pdb (giống lệnh del *.pdb trong file bat)
       run: |
         dotnet publish RePKG/RePKG.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o ./publish/linux-x64
 
     - name: Create Zip Archive
-      # Bước này thay thế cho lệnh 7z trong file bat
-      # Dùng PowerShell để nén file repkg thành repkg-linux-x64.zip
+      # Nén file lại trước khi upload lên Release
       run: |
         Compress-Archive -Path ./publish/linux-x64/* -DestinationPath ./RePKG-Linux-x64.zip
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    # --- BƯỚC MỚI: TẠO RELEASE VÀ UPLOAD FILE ---
+    - name: Create Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      # Chỉ chạy bước này nếu trigger là Tag (để tránh tạo release rác mỗi khi commit code)
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        name: RePKG-Linux-x64-Zip
-        path: ./RePKG-Linux-x64.zip
+        files: ./RePKG-Linux-x64.zip
+        # Tùy chọn: tự động tạo release notes từ commit message
+        generate_release_notes: true
