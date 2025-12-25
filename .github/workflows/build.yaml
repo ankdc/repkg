@@ -1,48 +1,56 @@
-name: Build and Release Linux x64
+name: Build and Auto Release
 
 on:
   push:
-    # Thêm trigger tags để khi bạn push tag (vd: v1.0.0) nó sẽ tạo release
-    tags:
-      - "v*" 
-    branches: [ "master", "main" ]
-  workflow_dispatch:
+    branches: [ "master", "main" ] # Chạy mỗi khi có code push vào main
+  workflow_dispatch: # Cho phép chạy thủ công nút Run Workflow
 
-# CẤP QUYỀN GHI ĐỂ TẠO RELEASE
 permissions:
-  contents: write
+  contents: write # Cần quyền này để tạo Tag và Release
 
 jobs:
-  build-linux:
+  build-release:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # QUAN TRỌNG: Phải lấy toàn bộ lịch sử để tìm được tag cũ
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x 
+      # --- BƯỚC 1: TỰ ĐỘNG TẠO TAG MỚI ---
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch  # Mặc định tăng số cuối (1.0.0 -> 1.0.1)
+          # Nếu chưa có tag nào, mặc định nó sẽ tạo v0.0.1.
+          # Để bắt đầu từ v1.0.0, bạn có thể tạo tag thủ công lần đầu hoặc thêm dòng dưới:
+          # custom_tag: 1.0.0 (chỉ dùng dòng này 1 lần duy nhất rồi xóa đi)
 
-    - name: Restore dependencies
-      run: dotnet restore
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
-    - name: Publish Linux x64 (Single File)
-      run: |
-        dotnet publish RePKG/RePKG.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o ./publish/linux-x64
+      - name: Restore dependencies
+        run: dotnet restore
 
-    - name: Create Zip Archive
-      # Nén file lại trước khi upload lên Release
-      run: |
-        Compress-Archive -Path ./publish/linux-x64/* -DestinationPath ./RePKG-Linux-x64.zip
+      - name: Publish Linux x64 (Single File)
+        run: |
+          dotnet publish RePKG/RePKG.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o ./publish/linux-x64
 
-    # --- BƯỚC MỚI: TẠO RELEASE VÀ UPLOAD FILE ---
-    - name: Create Release and Upload Asset
-      uses: softprops/action-gh-release@v2
-      # Chỉ chạy bước này nếu trigger là Tag (để tránh tạo release rác mỗi khi commit code)
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: ./RePKG-Linux-x64.zip
-        # Tùy chọn: tự động tạo release notes từ commit message
-        generate_release_notes: true
+      - name: Create Zip Archive
+        run: |
+          Compress-Archive -Path ./publish/linux-x64/* -DestinationPath ./RePKG-Linux-x64.zip
+
+      # --- BƯỚC 2: TẠO RELEASE VỚI TAG VỪA SINH RA ---
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Lấy tag vừa tạo ở bước 1 để đặt tên cho Release này
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          files: ./RePKG-Linux-x64.zip
+          body: ${{ steps.tag_version.outputs.changelog }} # Tự động điền nội dung thay đổi vào release note
