@@ -1,0 +1,42 @@
+name: Build Linux x64 on Windows
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: windows-latest # Vẫn chạy trên Windows như bạn yêu cầu
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x 
+        # LƯU Ý QUAN TRỌNG: Để tính năng "SingleFile" (thay thế ILRepack) hoạt động tốt trên Linux,
+        # bạn hãy chắc chắn file .csproj đã được sửa thành <TargetFramework>net8.0</TargetFramework>
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Publish Linux x64 (Single File)
+      # Lệnh này thay thế cho cả msbuild và ILRepack
+      # -p:DebugType=None: Không tạo file .pdb (giống lệnh del *.pdb trong file bat)
+      run: |
+        dotnet publish RePKG/RePKG.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o ./publish/linux-x64
+
+    - name: Create Zip Archive
+      # Bước này thay thế cho lệnh 7z trong file bat
+      # Dùng PowerShell để nén file repkg thành repkg-linux-x64.zip
+      run: |
+        Compress-Archive -Path ./publish/linux-x64/* -DestinationPath ./RePKG-Linux-x64.zip
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RePKG-Linux-x64-Zip
+        path: ./RePKG-Linux-x64.zip
